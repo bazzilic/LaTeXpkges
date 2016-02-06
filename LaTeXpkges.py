@@ -12,7 +12,7 @@ from glob import glob
 
 MAIN_FILE = 'Thesis.tex'
 PDF_FILE = 'Thesis.pdf'
-PATH = '.\\qwerty'
+PATH = os.path.join('.','qwerty')
 
 original_md5 = ''
 
@@ -133,7 +133,7 @@ def find_occurences(path='.'):
     tex_files = list_all_tex_files(path)
     if len(tex_files) == 0:
         return
-    for line in fileinput.input(path + '\\' + tex_files):
+    for line in fileinput.input([os.path.join(path, name) for name in tex_files]):
         if line.find("usepackage") != -1:
             occ = {}
             occ['filename'] = fileinput.filename()
@@ -149,8 +149,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     PATH = vars(args)['path']
-    if PATH[-1] != '\\':
-        PATH = PATH + '\\'
+    if PATH[-1] != os.sep:
+        PATH = PATH + os.sep
     if not os.path.isdir(PATH):
         print "Path is required to be a directory, which the supplied first argument is not!"
         print "Try to run  LaTeXpkges --help"
