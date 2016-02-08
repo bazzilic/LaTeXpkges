@@ -10,9 +10,9 @@ import random
 import argparse
 from glob import glob
 
-MAIN_FILE = 'Thesis.tex'
-PDF_FILE = 'Thesis.pdf'
-PATH = os.path.join('.','qwerty')
+#MAIN_FILE = 'Thesis.tex'
+#PDF_FILE = 'Thesis.pdf'
+#PATH = os.path.join('.','qwerty')
 
 original_md5 = ''
 
@@ -91,10 +91,10 @@ def build(dbgout=False):
         if dbgout:
             sys.stdout.write(".")
             sys.stdout.flush()
-        code = code + subprocess.call(["bibtex", MAIN_FILE[:-4]], stdout=FNULL, stderr=subprocess.STDOUT)
-        if dbgout:
-            sys.stdout.write(".")
-            sys.stdout.flush()
+        #code = code + subprocess.call(["bibtex", MAIN_FILE[:-4]], stdout=FNULL, stderr=subprocess.STDOUT)
+        #if dbgout:
+        #    sys.stdout.write(".")
+        #    sys.stdout.flush()
         code = code + subprocess.call(["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
                                        MAIN_FILE[:-4]], stdout=FNULL, stderr=subprocess.STDOUT)
         if dbgout:
@@ -108,7 +108,7 @@ def build(dbgout=False):
 
     return (code == 0) and os.path.exists(PDF_FILE)
 
-def file_md5(path=PDF_FILE, blocksize=65536):
+def file_md5(path, blocksize=65536):
     hasher = hashlib.md5()
 
     contents = None
@@ -118,6 +118,7 @@ def file_md5(path=PDF_FILE, blocksize=65536):
     re_ID = re.compile(r'/ID\s+\[<[0-9A-Fa-f]+>\s+<[0-9A-Fa-f]+>\]') # pdflatex puts a timestamp in every PDF
     re_Creation = re.compile(r'/CreationDate\s+\(D:[0-9+\'-]+\)')
     re_Mod = re.compile(r'/ModDate\s+\(D:[0-9+\'-]+\)')
+
 
     contents = re.sub(re_ID, '', contents)
     contents = re.sub(re_Creation, '/CreationDate ()', contents)
@@ -142,13 +143,16 @@ def find_occurences(path='.'):
             occurences.append(occ)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(prog='LaTeXpkges', description='LaTeXpkges is a package cleanup utility for LaTeX.')
-    parser.add_argument('path', help='Path to the folder (!) with your LaTeX files')
-    parser.add_argument('name', help='Name of the main .tex file, which is passed to pdflatex for compilation')
+    parser = argparse.ArgumentParser(prog='LaTeXpkges', 
+                description='LaTeXpkges is a package cleanup utility for LaTeX.')
+    parser.add_argument('path', default=os.path.join('.', 'qwerty'),
+                help='Path to the folder (!) with your LaTeX files')
+    parser.add_argument('name', default='Thesis.tex',
+                help='Name of the main .tex file, which is passed to pdflatex for compilation')
 
     args = parser.parse_args()
 
-    PATH = vars(args)['path']
+    PATH = args.path
     if PATH[-1] != os.sep:
         PATH = PATH + os.sep
     if not os.path.isdir(PATH):
@@ -159,7 +163,7 @@ if __name__ == '__main__':
 
     os.chdir(PATH)
 
-    MAIN_FILE = vars(args)['name']
+    MAIN_FILE = args.name
 
     if not os.path.exists(MAIN_FILE):
         print "The file", MAIN_FILE, "does not exist in directory", PATH
@@ -174,7 +178,7 @@ if __name__ == '__main__':
         exit()
 
     print "Calculating the original checksum for " + PDF_FILE + "..."
-    original_md5 = file_md5()
+    original_md5 = file_md5(PDF_FILE)
     print "MD5 for the original PDF is", original_md5
 
     print "Looking for package imports in the files...",
@@ -186,7 +190,7 @@ if __name__ == '__main__':
             print "Testing if", pkg, "can be removed...",
             tmp_file = substitute_line_in_file(occ['filename'], occ['line_no'], variant)
             if build():                        # I don't remember lazy evaluation
-                new_md5 = file_md5()           #
+                new_md5 = file_md5(PDF_FILE)   #
                 if new_md5 == original_md5:    # rules in python :)
                     packages_to_delete.append(pkg)
                     print "Yep."
