@@ -78,7 +78,7 @@ def substitute_line_in_file(path, line_no, new_str): # line_no is 1-based
 
     return path+bak_ext
 
-def build(dbgout=False):
+def build(dbgout=False, have_bibtex=False):
     if dbgout:
         sys.stdout.write("Building the project.")
         sys.stdout.flush()
@@ -91,15 +91,18 @@ def build(dbgout=False):
         if dbgout:
             sys.stdout.write(".")
             sys.stdout.flush()
-        #code = code + subprocess.call(["bibtex", MAIN_FILE[:-4]], stdout=FNULL, stderr=subprocess.STDOUT)
-        #if dbgout:
-        #    sys.stdout.write(".")
-        #    sys.stdout.flush()
-        code = code + subprocess.call(["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
-                                       MAIN_FILE[:-4]], stdout=FNULL, stderr=subprocess.STDOUT)
-        if dbgout:
-            sys.stdout.write(".")
-            sys.stdout.flush()
+            
+        if have_bibtex:
+            code = code + subprocess.call(["bibtex", MAIN_FILE[:-4]], stdout=FNULL, stderr=subprocess.STDOUT)
+            if dbgout:
+                sys.stdout.write(".")
+                sys.stdout.flush()
+            code = code + subprocess.call(["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
+                                           MAIN_FILE[:-4]], stdout=FNULL, stderr=subprocess.STDOUT)
+            if dbgout:
+                sys.stdout.write(".")
+                sys.stdout.flush()
+                
         code = code + subprocess.call(["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
                                        MAIN_FILE[:-4]], stdout=FNULL, stderr=subprocess.STDOUT)
 
