@@ -115,7 +115,7 @@ def file_md5(path=PDF_FILE, blocksize=65536):
     with open(path, 'rb') as infile:
         contents = infile.read()
 
-    re_ID = re.compile(r'/ID\s+\[<[0-9A-Fa-f]+>\s+<[0-9A-Fa-f]+>\]\s+>>') # pdflatex puts a timestamp in every PDF
+    re_ID = re.compile(r'/ID\s+\[<[0-9A-Fa-f]+>\s+<[0-9A-Fa-f]+>\]') # pdflatex puts a timestamp in every PDF
     re_Creation = re.compile(r'/CreationDate\s+\(D:[0-9+\'-]+\)')
     re_Mod = re.compile(r'/ModDate\s+\(D:[0-9+\'-]+\)')
 
