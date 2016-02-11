@@ -64,16 +64,26 @@ def find_all(a_str, sub):
         start += len(sub) # use start += 1 to find overlapping matches
 
 
-def substitute_line_in_file(path, line_no, new_str): # line_no is 1-based
-    bak_ext = '.bak' + str(random.randint(1000,9999))
-    input_object = fileinput.input(path, inplace=True, backup=bak_ext)
-    for line in input_object:
-        if fileinput.filelineno() == line_no:
-            print new_str.rstrip("\n\r")
-        else:
-            print line.rstrip("\n\r")
+def substitute_line_in_file(input_name, output_name, line_no, new_str): # line_no is 1-based
+    #bak_ext = '.bak' + str(random.randint(1000,9999))
+    #input_object = fileinput.input(path, inplace=True, backup=bak_ext)
+    #for line in input_object:
+    #    if fileinput.filelineno() == line_no:
+    #        print new_str.rstrip("\n\r")
+    #    else:
+    #        print line.rstrip("\n\r")
 
-    return path + bak_ext
+    with open(input_name, 'r') as fp:
+        lines = fp.readlines()
+        
+    with open(output_name, 'w') as fp:
+        for i, line in enumerate(lines, start=1):
+            if i == line_no:
+                fp.write(new_str)
+            else:
+                fp.write(line)
+
+    
 
 
 def build(filename, latex='pdflatex', bibtex=None, dbgout=False):
@@ -85,7 +95,10 @@ def build(filename, latex='pdflatex', bibtex=None, dbgout=False):
 
     with open(os.devnull, 'w') as FNULL:
         code = code + subprocess.call([latex, "-interaction=nonstopmode", "-halt-on-error",
-                                       filename], stdout=FNULL, stderr=subprocess.STDOUT)  # cut off the `.tex` ext
+                                       filename], stdout=FNULL, stderr=subprocess.STDOUT)  
+        if latex == 'latex':
+            code = code + subprocess.call(["dvipdf", filename.replace('.tex', '.dvi')], 
+                                          stdout=FNULL, stderr=subprocess.STDOUT)
         if dbgout:
             sys.stdout.write(".")
             sys.stdout.flush()
@@ -97,12 +110,18 @@ def build(filename, latex='pdflatex', bibtex=None, dbgout=False):
                 sys.stdout.flush()
             code = code + subprocess.call([latex, "-interaction=nonstopmode", "-halt-on-error",
                                            filename], stdout=FNULL, stderr=subprocess.STDOUT)
+            if latex == 'latex':
+                code = code + subprocess.call(["dvipdf", filename.replace('.tex', '.dvi')], 
+                                              stdout=FNULL, stderr=subprocess.STDOUT)
             if dbgout:
                 sys.stdout.write(".")
                 sys.stdout.flush()
                 
         code = code + subprocess.call([latex, "-interaction=nonstopmode", "-halt-on-error",
                                        filename], stdout=FNULL, stderr=subprocess.STDOUT)
+        if latex == 'latex':
+            code = code + subprocess.call(["dvipdf", filename.replace('.tex', '.dvi')], 
+                                          stdout=FNULL, stderr=subprocess.STDOUT)
 
     if dbgout:
         print(" Done!")
@@ -133,12 +152,23 @@ def file_md5(path, blocksize=65536):
     return hasher.hexdigest()
     
 
-def find_occurences(path='.', names=[]):
+def find_occurences(main_file):
+
+    file_list = [main_file]
+    with open(main_file, 'r') as fp:
+        for line in fp.readlines():
+            if r'\input' in line:
+                fname = line.split(r'\input ')[1].strip()
+                file_list.append(fname)
+            if r'\include{' in line:
+                fname = line.split(r'\include{')[1].split('}')[0]
+                file_list.append(fname)
+
     occurences = []
-    tex_files = glob("*.tex") #list_all_tex_files(path, names)
+    tex_files = file_list
     if len(tex_files) == 0:
         return
-    for line in fileinput.input([os.path.join(path, name) for name in tex_files]):
+    for line in fileinput.input(tex_files):
         if line.find("usepackage") != -1:
             occ = {}
             occ['filename'] = fileinput.filename()
@@ -160,6 +190,7 @@ if __name__ == '__main__':
     filename = args.name
     filepath = os.path.dirname(filename)
     pdffile  = filename.replace('.tex', '.pdf')
+    debug_on = True
 
     os.chdir(filepath)
 
@@ -178,16 +209,19 @@ if __name__ == '__main__':
     print "MD5 for the original PDF is", original_md5
 
     print "Looking for package imports in the files...",
-    occurences = find_occurences('.', [filename])
+    occurences = find_occurences(filename)
     print len(occurences), "were found."
 
     packages_to_delete = []
+    count = 9000
     for occ in occurences:
         for (pkg, variant) in get_variants(occ['string']):
             print "Testing if", pkg, "can be removed...",
-            tmp_file = substitute_line_in_file(occ['filename'], occ['line_no'], variant)
-            if build(filename):                # I don't remember lazy evaluation
-                new_md5 = file_md5(pdffile)    #
+            tmp_file = occ['filename'].rsplit('.', 1)[0] + "-{0}.tex".format(count)
+            substitute_line_in_file(occ['filename'], tmp_file, occ['line_no'], variant)
+            pdf_file = tmp_file.replace('.tex', '.pdf')
+            if build(tmp_file):                # I don't remember lazy evaluation
+                new_md5 = file_md5(pdf_file)   #
                 if new_md5 == original_md5:    # rules in python :)
                     packages_to_delete.append(pkg)
                     print "Yep."
@@ -195,10 +229,16 @@ if __name__ == '__main__':
                     print "Nope. Checksum mismatch:", new_md5
             else:
                 print "Nope. Build fails."
-            os.remove(occ['filename']) # on Windows you can't rename if the dst exists
-            os.rename(tmp_file, occ['filename'])
-            os.remove(pdffile) if os.path.exists(pdffile) else None
-
+            
+            count = count + 1
+            if not debug_on:
+                os.remove(tmp_file) 
+                os.remove(pdf_file) if os.path.exists(pdf_file) else None
+                
+            fname = tmp_file.replace('.tex', '.log')
+            os.remove(fname) if os.path.exists(fname) else None
+            fname = tmp_file.replace('.tex', '.aux')
+            os.remove(fname) if os.path.exists(fname) else None                
 
     print
     if packages_to_delete:
