@@ -1,8 +1,10 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import re
 import os
 import sys
+import filecmp
 import fileinput
 import hashlib
 import subprocess
@@ -11,19 +13,17 @@ import argparse
 from glob import glob
 
 
-def list_all_tex_files(path='.', names=[]):
-    return [y for x in os.walk(path) for y in x[1] if any(item in y for item in names)]
 
 def get_variants(s):
-    # print 'The string is', '`'+s+'`' # DEBUG
   
     # find where comment starts
     comment_ptrn = re.compile(r'([^\\]|^)%')
     comment_match = re.search(comment_ptrn, s)
     comment_start = len(s)
+    # ignore comments line
     if comment_match:
         comment_start = comment_match.start()
-
+    # regex to match packages used
     uspkg_cmd_pttrn = re.compile(r'\\usepackage\s*(?:\[[^\]]*\])?\s*\{([a-zA-Z0-9,\s-]+)\}')
     matches = uspkg_cmd_pttrn.finditer(s)
 
@@ -31,9 +31,8 @@ def get_variants(s):
         pkgs = match.group(1) # list of packages in the current \usepackage command
         pkgs_start_pos = match.start(1)
         pkgs_end_pos = match.end(1)
-        # print "big match start", match.start(),  "; end", match.end(),  "; match:", '`'+match.group()+'`' # DEBUG
-        # print "sml match start", match.start(1), "; end", match.end(1), "; match:", '`'+match.group(1)+'`' # DEBUG
-
+       
+        # match is commented out
         if match.start() > comment_start:
             # print "This is a comment" # DEBUG
             continue
@@ -65,17 +64,13 @@ def find_all(a_str, sub):
 
 
 def substitute_line_in_file(input_name, output_name, line_no, new_str): # line_no is 1-based
-    #bak_ext = '.bak' + str(random.randint(1000,9999))
-    #input_object = fileinput.input(path, inplace=True, backup=bak_ext)
-    #for line in input_object:
-    #    if fileinput.filelineno() == line_no:
-    #        print new_str.rstrip("\n\r")
-    #    else:
-    #        print line.rstrip("\n\r")
+    
 
     with open(input_name, 'r') as fp:
         lines = fp.readlines()
-        
+    # write all lines from the input_name to 
+    # the output_name with changing a line with 
+    # number line_no to new_str
     with open(output_name, 'w') as fp:
         for i, line in enumerate(lines, start=1):
             if i == line_no:
@@ -86,48 +81,42 @@ def substitute_line_in_file(input_name, output_name, line_no, new_str): # line_n
     
 
 
-def build(filename, latex='pdflatex', bibtex=None, dbgout=False):
+def build(filename, latex='pdflatex', visual=False, bibtex=None, dbgout=False):
     if dbgout:
         sys.stdout.write("Building the project.")
         sys.stdout.flush()
 
-    code = 0
+    compile_code = [latex, "-interaction=nonstopmode", "-halt-on-error", filename]
+    if latex == 'xelatex':
+        if visual:
+            compile_code = [latex, "-halt-on-error", filename]
+        else:
+            compile_code = [latex, "-no-pdf", "-halt-on-error", filename]
 
+    code = 0
     with open(os.devnull, 'w') as FNULL:
-        code = code + subprocess.call([latex, "-interaction=nonstopmode", "-halt-on-error",
-                                       filename], stdout=FNULL, stderr=subprocess.STDOUT)  
-        if latex == 'latex':
-            code = code + subprocess.call(["dvipdf", filename.replace('.tex', '.dvi')], 
-                                          stdout=FNULL, stderr=subprocess.STDOUT)
+        code = code + subprocess.call(compile_code, stdout=FNULL, stderr=subprocess.STDOUT)  
         if dbgout:
             sys.stdout.write(".")
             sys.stdout.flush()
             
         if bibtex:
-            code = code + subprocess.call([bibtex, filename], stdout=FNULL, stderr=subprocess.STDOUT)
+            code = code + subprocess.call([bibtex, filename.replace('.tex', '')], 
+                                          stdout=FNULL, stderr=subprocess.STDOUT)
             if dbgout:
                 sys.stdout.write(".")
                 sys.stdout.flush()
-            code = code + subprocess.call([latex, "-interaction=nonstopmode", "-halt-on-error",
-                                           filename], stdout=FNULL, stderr=subprocess.STDOUT)
-            if latex == 'latex':
-                code = code + subprocess.call(["dvipdf", filename.replace('.tex', '.dvi')], 
-                                              stdout=FNULL, stderr=subprocess.STDOUT)
+            code = code + subprocess.call(compile_code, stdout=FNULL, stderr=subprocess.STDOUT)
             if dbgout:
                 sys.stdout.write(".")
                 sys.stdout.flush()
                 
-        code = code + subprocess.call([latex, "-interaction=nonstopmode", "-halt-on-error",
-                                       filename], stdout=FNULL, stderr=subprocess.STDOUT)
-        if latex == 'latex':
-            code = code + subprocess.call(["dvipdf", filename.replace('.tex', '.dvi')], 
-                                          stdout=FNULL, stderr=subprocess.STDOUT)
+        code = code + subprocess.call(compile_code, stdout=FNULL, stderr=subprocess.STDOUT)
 
     if dbgout:
         print(" Done!")
 
-    pdffile = filename.replace('.tex', '.pdf')
-    return (code == 0) and os.path.exists(pdffile)
+    return code == 0
 
 
 def file_md5(path, blocksize=65536):
@@ -138,13 +127,16 @@ def file_md5(path, blocksize=65536):
         contents = infile.read()
 
     # pdflatex puts a timestamp in every PDF
-    re_ID = re.compile(r"/ID\s+\[<[0-9A-Fa-f]+>\s+<[0-9A-Fa-f]+>\]") 
-    re_Creation = re.compile(r"/CreationDate\s+\(D:[0-9+\'-]+\)")
-    re_Mod = re.compile(r"/ModDate\s+\(D:[0-9+\'-]+\)")
+    re_ID = re.compile(r"/ID\s*\[.*?\]") 
+    re_Creation = re.compile(r"/CreationDate\s+\(.*?\)")
+    re_Mod = re.compile(r"/ModDate\s+\(.*?\)")
+    
+    re_Output = re.compile(r"TeX output [0-9]{4}\.[0-9]{2}\.[0-9]{2}\:[0-9]{4}")
 
     contents = re.sub(re_ID, '', contents)
     contents = re.sub(re_Creation, '/CreationDate ()', contents)
     contents = re.sub(re_Mod, '/ModDate ()', contents)
+    contents = re.sub(re_Output, 'TeX output', contents)
 
     for chunk in [contents[i:i+blocksize] for i in range(0, len(contents), blocksize)]:
         hasher.update(chunk)
@@ -154,18 +146,8 @@ def file_md5(path, blocksize=65536):
 
 def find_occurences(main_file):
 
-    file_list = [main_file]
-    with open(main_file, 'r') as fp:
-        for line in fp.readlines():
-            if r'\input' in line:
-                fname = line.split(r'\input ')[1].strip()
-                file_list.append(fname)
-            if r'\include{' in line:
-                fname = line.split(r'\include{')[1].split('}')[0]
-                file_list.append(fname)
-
     occurences = []
-    tex_files = file_list
+    tex_files = [main_file]
     if len(tex_files) == 0:
         return
     for line in fileinput.input(tex_files):
@@ -178,21 +160,76 @@ def find_occurences(main_file):
             
     return occurences            
 
+
+
+def burst_jpeg(filename, latex_engine):
+
+    name = filename.replace('.tex', '')
+    if latex_engine != 'latex':
+        command = "gs -q -dNOPAUSE -dBATCH -sDEVICE=jpeg -sOutputFile={0}-p%04d.jpg -r300x300 {0}.pdf".format(name)
+    else:
+        with open(os.devnull, 'w') as FNULL:
+            subprocess.call(['dvips', filename.replace('.tex', '.dvi')], 
+                            stdout=FNULL, stderr=subprocess.STDOUT)  
+                            
+        command = "gs -q -dNOPAUSE -dBATCH -sDEVICE=jpeg -sOutputFile={0}-p%04d.jpg -r300x300 {0}.ps".format(name)
+        
+    os.system(command)
+    
+
+def compare_jpeg(src_name, dst_name):
+    
+    count = len(glob("{0}-p*.jpg".format(dst_name)))
+    for i in range(1, count+1):
+        src = '{0}-p{1:04d}.jpg'.format(src_name, i)
+        dst = '{0}-p{1:04d}.jpg'.format(dst_name, i)
+        if not os.path.exists(src) or not os.path.exists(dst):
+            return False
+        if not filecmp.cmp(src, dst):
+            return False
+        
+    return True
+    
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='LaTeXpkges', 
                 description='LaTeXpkges is a package cleanup utility for LaTeX.')
     
-    parser.add_argument('name', default='main.tex',
-                help='Name of the main .tex file, which is passed to pdflatex for compilation')
-
+    parser.add_argument('filename', help='Name of the main .tex file, which is passed to pdflatex for compilation')
+    parser.add_argument('--debug', action='store_true', default=False, 
+                        help="Don't delete output *.tex and *.pdf files during processing (default: %(default)s)")
+    parser.add_argument('--latex', required=False, choices=['latex', 'pdflatex', 'xelatex', 'lualatex'], 
+                        default='pdflatex', help='An engine to process .tex files (default: %(default)s)')
+    parser.add_argument('--bibtex', required=False, choices=['bibtex', 'biber'], 
+                        default=None, help='A reference engine for .tex files (default: %(default)s)')
+    parser.add_argument('--visual', action='store_true', default=False, 
+                        help="Do the visual comarison instead of checksum (default: %(default)s)")
     args = parser.parse_args()
 
-    filename = args.name
-    filepath = os.path.dirname(filename)
-    pdffile  = filename.replace('.tex', '.pdf')
-    debug_on = True
+    latex_engine  = args.latex
+    bibtex_engine = args.bibtex
+    
+    ext_mapping = {'latex'   : '.dvi',
+                   'xelatex' : '.xdv',
+                   'pdflatex': '.pdf', 
+                   'lualatex': '.pdf'}
+    
+    file_ext = ext_mapping[latex_engine]
+    filename = os.path.basename(args.filename)
+    filepath = os.path.dirname(args.filename)
+    out_file = filename.replace('.tex', file_ext)
+    debug_on = args.debug
+    visual   = args.visual
+    
+        
+    #if latex_engine == 'xelatex':
+    #    print("Comparison using xelatex does not work yet because of wildly different PDF files produced by xelatex")
+    #    sys.exit()
+    
 
-    os.chdir(filepath)
+    if filepath:
+        os.chdir(filepath)
 
     if not os.path.exists(filename):
         print "The file", filename, "does not exist"
@@ -200,45 +237,70 @@ if __name__ == '__main__':
         print
         sys.exit()
 
-    if not build(filename, dbgout=True):
+    if not build(filename, latex_engine, visual, bibtex_engine, dbgout=True):
         print "Initial build fails! Finishing now..."
         sys.exit()
 
-    print "Calculating the original checksum for " + pdffile + "..."
-    original_md5 = file_md5(pdffile)
-    print "MD5 for the original PDF is", original_md5
+    if visual:
+        burst_jpeg(filename, latex_engine)
+    else:
+        print "Calculating the original checksum for " + out_file + "..."
+        original_md5 = file_md5(out_file)
+        print "MD5 for the original output file is", original_md5
 
     print "Looking for package imports in the files...",
     occurences = find_occurences(filename)
     print len(occurences), "were found."
 
     packages_to_delete = []
-    count = 9000
+    count = 1
     for occ in occurences:
         for (pkg, variant) in get_variants(occ['string']):
             print "Testing if", pkg, "can be removed...",
-            tmp_file = occ['filename'].rsplit('.', 1)[0] + "-{0}.tex".format(count)
+            tmp_file = occ['filename'].rsplit('.', 1)[0] + "-LaTeXpkges-{0:03d}.tex".format(count)
             substitute_line_in_file(occ['filename'], tmp_file, occ['line_no'], variant)
-            pdf_file = tmp_file.replace('.tex', '.pdf')
-            if build(tmp_file):                # I don't remember lazy evaluation
-                new_md5 = file_md5(pdf_file)   #
-                if new_md5 == original_md5:    # rules in python :)
-                    packages_to_delete.append(pkg)
-                    print "Yep."
+            output_file = tmp_file.replace('.tex', file_ext)
+            if build(tmp_file, latex_engine, visual, bibtex_engine): 
+                if visual:
+                    burst_jpeg(tmp_file, latex_engine)
+                    res = compare_jpeg(filename.replace('.tex', ''), tmp_file.replace('.tex', ''))
+                    if res:    
+                        packages_to_delete.append(pkg)
+                        print "Yep."
+                    else:
+                        print "Nope. Images don't match"
                 else:
-                    print "Nope. Checksum mismatch:", new_md5
+                    new_md5 = file_md5(output_file)   
+                    # check for a match
+                    if new_md5 == original_md5:    
+                        packages_to_delete.append(pkg)
+                        print "Yep."
+                    else:
+                        print "Nope. Checksum mismatch:", new_md5
             else:
                 print "Nope. Build fails."
             
             count = count + 1
             if not debug_on:
-                os.remove(tmp_file) 
-                os.remove(pdf_file) if os.path.exists(pdf_file) else None
-                
-            fname = tmp_file.replace('.tex', '.log')
+            
+                if visual:
+                    for name in glob("{0}-*.jpg".format(tmp_file.replace('.tex', ''))):
+                        os.remove(name)
+                        
+                rm_ext = ['.tex', '.log', '.aux', '.dvi', '.ps', '.pdf', '.xdv']
+                for ext in rm_ext:
+                    fname = tmp_file.replace('.tex', ext)
+                    os.remove(fname) if os.path.exists(fname) else None
+              
+
+    if not debug_on and visual:
+       for name in glob("{0}-*.jpg".format(filename.replace('.tex', ''))):
+          os.remove(name)
+    if not debug_on:
+        rm_ext = ['.log', '.aux', '.dvi', '.ps', '.pdf', '.xdv']
+        for ext in rm_ext:
+            fname = filename.replace('.tex', ext)
             os.remove(fname) if os.path.exists(fname) else None
-            fname = tmp_file.replace('.tex', '.aux')
-            os.remove(fname) if os.path.exists(fname) else None                
 
     print
     if packages_to_delete:
