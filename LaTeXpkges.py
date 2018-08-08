@@ -208,7 +208,7 @@ if __name__ == '__main__':
                         default=None, help='A reference engine for .tex files (default: %(default)s)')
     parser.add_argument('--visual', action='store_true', default=False, 
                         help="Do the visual comarison instead of checksum (default: %(default)s)")
-    parser.add_argument('--input', action='append', required=False, type=str,
+    parser.add_argument('--input', action='append', required=False, type=str, default=[],
                         help="Specify additional files loaded via \input{} in the document to consider for testing")
     args = parser.parse_args()
 
