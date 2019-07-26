@@ -11,6 +11,7 @@ import subprocess
 import random
 import argparse
 from glob import glob
+from multiprocessing import Pool
 
 
 def get_basename(s):
@@ -210,6 +211,8 @@ if __name__ == '__main__':
                         help="Do the visual comarison instead of checksum (default: %(default)s)")
     parser.add_argument('--input', action='append', required=False, type=str, default=[],
                         help="Specify additional files loaded via \input{} in the document to consider for testing")
+    parser.add_argument('--parallel', action='store_true', default=False,
+                        help="Speed up with multiple threads, with the cpu count of this machine (default: %(default)s)")
     args = parser.parse_args()
 
     latex_engine  = args.latex
@@ -220,6 +223,9 @@ if __name__ == '__main__':
                    'pdflatex': '.pdf', 
                    'lualatex': '.pdf'}
 
+    rm_ext = ['.log', '.aux', '.dvi', '.ps', '.pdf', '.xdv',
+              '.bcf', '.bbl', '.blg', '.run.xml']
+
     file_ext = ext_mapping[latex_engine]
     filename = os.path.basename(args.filename)
     filepath = os.path.dirname(args.filename)
@@ -227,6 +233,7 @@ if __name__ == '__main__':
     debug_on = args.debug
     visual   = args.visual
     inputs   = args.input
+    parallel = args.parallel
 
     #if latex_engine == 'xelatex':
     #    print("Comparison using xelatex does not work yet because of wildly different PDF files produced by xelatex")
@@ -259,10 +266,21 @@ if __name__ == '__main__':
 	print len(occurences), "were found."
 
     packages_to_delete = []
-    count = 1
-    for occ in occurences:
+
+    def log_result(results):
+        # This is called whenever process_occ(args) returns a result.
+        for pkg, msg in results:
+            print msg
+            if pkg is not None:
+                # packages_to_delete is modified only by the main process, not the pool workers.
+                packages_to_delete.append(pkg)
+
+    def process_occ(args):
+        count, occ = args
+        results = []
         for (pkg, variant) in get_variants(occ['string']):
-            print "Testing if", pkg, "can be removed...",
+            result_msg = "Testing if {} can be removed... ".format(pkg)
+            to_be_removed = None
             tmp_file = occ['filename'].rsplit('.', 1)[0] + "-LaTeXpkges-{0:03d}.tex".format(count)
             substitute_line_in_file(occ['filename'], tmp_file, occ['line_no'], variant)
             output_file = tmp_file.replace('.tex', file_ext)
@@ -270,40 +288,48 @@ if __name__ == '__main__':
                 if visual:
                     burst_jpeg(tmp_file, latex_engine)
                     res = compare_jpeg(get_basename(filename), get_basename(tmp_file))
-                    if res:    
-                        packages_to_delete.append(pkg)
-                        print "Yep."
+                    if res:
+                        result_msg += "Yep."
+                        to_be_removed = pkg
                     else:
-                        print "Nope. Images don't match"
+                        result_msg += "Nope. Images don't match"
                 else:
                     new_md5 = file_md5(output_file)   
                     # check for a match
-                    if new_md5 == original_md5:    
-                        packages_to_delete.append(pkg)
-                        print "Yep."
+                    if new_md5 == original_md5:
+                        to_be_removed = pkg
+                        result_msg += "Yep."
                     else:
-                        print "Nope. Checksum mismatch:", new_md5
+                        result_msg += "Nope. Checksum mismatch: {}".format(new_md5)
             else:
-                print "Nope. Build fails."
+                result_msg += "Nope. Build fails."
+            results.append((to_be_removed, result_msg))
 
-            count = count + 1
             if not debug_on:
 
                 if visual:
                     for name in glob("{0}-*.jpg".format(get_basename(tmp_file))):
                         os.remove(name)
-
-                rm_ext = ['.tex', '.log', '.aux', '.dvi', '.ps', '.pdf', '.xdv']
-                for ext in rm_ext:
+                for ext in rm_ext + ['.tex']:
                     fname = tmp_file.replace('.tex', ext)
                     os.remove(fname) if os.path.exists(fname) else None
+        return results
 
+    if parallel:
+        pool = Pool()
+        for args in enumerate(occurences):
+            pool.apply_async(process_occ, (args,), callback=log_result)
+        pool.close()
+        pool.join()
+    else:
+        for args in enumerate(occurences):
+            results = process_occ(args)
+            log_result(results)
 
     if not debug_on and visual:
        for name in glob("{0}-*.jpg".format(get_basename(filename))):
           os.remove(name)
     if not debug_on:
-        rm_ext = ['.log', '.aux', '.dvi', '.ps', '.pdf', '.xdv']
         for ext in rm_ext:
             fname = filename.replace('.tex', ext)
             os.remove(fname) if os.path.exists(fname) else None
