@@ -253,10 +253,10 @@ if __name__ == '__main__':
         original_md5 = file_md5(out_file)
         print "MD5 for the original output file is", original_md5
 
-	occurences = find_occurences(filename)
-	for s in inputs:
-		occurences.extend(find_occurences(s))
-	print len(occurences), "were found."
+    occurences = find_occurences(filename)
+    for s in inputs:
+        occurences.extend(find_occurences(s))
+    print len(occurences), "were found."
 
     packages_to_delete = []
     count = 1
