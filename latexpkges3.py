@@ -1,4 +1,3 @@
-import os
 import re
 import sys
 import filecmp
@@ -38,12 +37,12 @@ def setup_parser():
         help='The name of a reference engine for .tex files (default: %(default)s)'
     )
     parser.add_argument(
-        '--visual', action='store_true',
-        help='Do the visual comarison instead of checksum'
+        '--num_threads', type=int, default=1,
+        help="The number of parallel processes (default: %(default)s)"
     )
     parser.add_argument(
-        '--num_threads', type=int, default=1,
-        help="Parallelize with multiple threads (default: %(default)s)"
+        '--visual', action='store_true',
+        help='Do the visual comarison instead of checksum'
     )
     parser.add_argument(
         '--verbose', action='store_true',
@@ -96,7 +95,8 @@ def burst_jpeg(filename, latex_engine):
     if latex_engine == 'latex':
         command = ['dvips', filename.with_suffix('.dvi')]
         subprocess.run(
-            command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            cwd=filename.parent
         )
         input_name = filename.with_suffix('.ps')
     else:
@@ -110,7 +110,8 @@ def burst_jpeg(filename, latex_engine):
         f'-sOutputFile={jpg_prefix}-p%05d.jpg', '-r300x300', str(input_name)
     ]
     subprocess.run(
-        command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        cwd=filename.parent
     )
     return jpg_prefix.parent
 
@@ -219,25 +220,29 @@ def build(filename, latex='pdflatex', bibtex=None, visual=False, verbose=False):
     if verbose:
         print('Building the project  ', end='')
     response = subprocess.run(
-        compile_code, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        compile_code, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        cwd=filename.parent
     )
     if verbose:
         print('.' if response.returncode == 0 else 'F', end='')
 
     if bibtex:
         response = subprocess.run(
-            [bibtex, str(filename.stem)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+            [bibtex, str(filename.stem)], stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE, cwd=filename.parent
         )
         if verbose:
             print('.' if response.returncode == 0 else 'F', end='')
         response = subprocess.run(
-            compile_code, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+            compile_code, stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE, cwd=filename.parent
         )
         if verbose:
             print('.' if response.returncode == 0 else 'F', end='')
 
     response = subprocess.run(
-        compile_code, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        compile_code, stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE, cwd=filename.parent
     )
     if verbose:
         print('.' if response.returncode == 0 else 'F', end='')
@@ -261,15 +266,10 @@ def cleanup(filename, jpeg_dirname):
         jpeg_dirname.rmdir()
 
 
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-if __name__ == '__main__':
+def main():
 
     parser = setup_parser()
     args = parser.parse_args()
-
-    project_dir = args.filename.parent
-    os.chdir(project_dir)
 
     # initial build
     success = build(args.filename, args.latex, args.bibtex, args.visual, verbose=args.verbose)
@@ -315,3 +315,10 @@ if __name__ == '__main__':
 
     if not args.debug:
         cleanup(args.filename, original_jpeg)
+
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+
+if __name__ == '__main__':
+    main()
